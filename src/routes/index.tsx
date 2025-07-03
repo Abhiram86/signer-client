@@ -81,7 +81,7 @@ function Home() {
               className="ring-2 w-full cursor-pointer transition-all file:cursor-pointer ring-zinc-600 hover:ring-sky-300 file:py-2 file:px-6 file:bg-zinc-200 file:text-zinc-950 rounded-full"
             />
           </div>
-          <Button className="rounded-full">proceed for signature</Button>
+          {/* <Button className="rounded-full">proceed for signature</Button> */}
         </div>
       ) : (
         <Sign file={file} userId={user?.userId} />

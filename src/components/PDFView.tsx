@@ -1,4 +1,4 @@
-import { getFiles, type Doc } from "@/api/docs";
+import { docsUpload, getFiles, type Doc } from "@/api/docs";
 import { AuthContext } from "@/context/AuthProvider";
 import { useContext, useEffect, useState, useCallback } from "react";
 import packageJson from "../../package.json";
@@ -7,6 +7,7 @@ import type {
   DocumentLoadEvent,
   PageChangeEvent,
 } from "@react-pdf-viewer/core";
+import { Button } from "./Button";
 
 interface PageTracker {
   docId: string;
@@ -18,7 +19,7 @@ interface PageTracker {
   pageY: number;
 }
 
-interface SignaturePosition {
+export interface SignaturePosition {
   x: number; // relative position (0-1)
   y: number; // relative position (0-1)
   page: number;
@@ -46,8 +47,8 @@ export default function PDFView({ preDoc, simpleMode = false }: PDFViewProps) {
     {}
   );
   const [signatures, setSignatures] = useState<SignaturePosition[]>([]);
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  // const [isDragging, setIsDragging] = useState(false);
+  // const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [signatureImage, setSignatureImage] = useState<string | null>(null);
   const [defaultSignatureSize, setDefaultSignatureSize] = useState({
     width: 0.15,
@@ -245,24 +246,21 @@ export default function PDFView({ preDoc, simpleMode = false }: PDFViewProps) {
 
   // Add signature at clicked position
   const handleAddSignature = useCallback(
-    (docId: string) => (pageX: number, pageY: number) => {
+    (docId: string) => (pageX: number, pageY: number, page: number) => {
       if (simpleMode || !signatureImage) return;
 
-      const tracker = pageTrackers[docId];
-      if (tracker) {
-        const newSignature: SignaturePosition = {
-          x: pageX,
-          y: pageY,
-          page: tracker.currentPage,
-          docId,
-          width: defaultSignatureSize.width,
-          height: defaultSignatureSize.height,
-        };
-        setSignatures((prev) => [...prev, newSignature]);
-        console.log("Added signature at:", newSignature);
-      }
+      const newSignature: SignaturePosition = {
+        x: pageX,
+        y: pageY,
+        page: page, // Use the provided page instead of tracker.currentPage
+        docId,
+        width: defaultSignatureSize.width,
+        height: defaultSignatureSize.height,
+      };
+      setSignatures((prev) => [...prev, newSignature]);
+      console.log("Added signature at:", newSignature);
     },
-    [pageTrackers, simpleMode, signatureImage, defaultSignatureSize]
+    [simpleMode, signatureImage, defaultSignatureSize]
   );
 
   // Handle signature drag
@@ -464,6 +462,54 @@ export default function PDFView({ preDoc, simpleMode = false }: PDFViewProps) {
           simpleMode={simpleMode}
         />
       ))}
+      <div>
+        <Button
+          type="submit"
+          onClick={async () => {
+            if (!signatureImage || signatures.length === 0) {
+              alert(
+                "Please upload a signature image and add at least one signature."
+              );
+              return;
+            }
+
+            for (const doc of docs) {
+              const relatedSignatures = signatures.filter(
+                (sig) => sig.docId === doc._id
+              );
+
+              for (const sig of relatedSignatures) {
+                const formData = new FormData();
+
+                // Convert Uint8Array or Array to Blob
+                const pdfBlob = new Blob([new Uint8Array(doc.file.data)], {
+                  type: "application/pdf",
+                });
+
+                // Convert base64 image to Blob
+                const imageBlob = await (async () => {
+                  const res = await fetch(signatureImage);
+                  return await res.blob();
+                })();
+
+                formData.append("pdf", pdfBlob, doc.fileName || "document.pdf");
+                formData.append("signature", imageBlob, "signature.png");
+                formData.append("userId", doc.userId);
+                formData.append("page", sig.page.toString());
+                formData.append("x", sig.x.toString());
+                formData.append("y", sig.y.toString());
+                formData.append("width", sig.width.toString());
+                formData.append("height", sig.height.toString());
+
+                await docsUpload({ formData });
+              }
+            }
+          }}
+          className="rounded-lg"
+        >
+          Submit
+        </Button>
+      </div>
     </div>
   );
 }

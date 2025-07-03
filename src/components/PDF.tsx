@@ -64,7 +64,7 @@ interface PDFProps {
     pageY: number
   ) => void;
   onClick: (pdfX: number, pdfY: number, pageX: number, pageY: number) => void;
-  onAddSignature: (pageX: number, pageY: number) => void;
+  onAddSignature: (pageX: number, pageY: number, page: number) => void;
   signatures: SignaturePosition[];
   onSignatureDrag: (index: number, newX: number, newY: number) => void;
   onRemoveSignature: (index: number) => void;
@@ -188,11 +188,19 @@ export default function PDF({
 
         // Add signature on double click (only if signature image is available)
         if (e.detail === 2 && signatureImage) {
-          onAddSignature(coords.pageX, coords.pageY);
+          const pageNumber = tracker.currentPage;
+          onAddSignature(coords.pageX, coords.pageY, pageNumber);
         }
       }
     },
-    [simpleMode, getPdfCoordinates, onClick, onAddSignature, signatureImage]
+    [
+      simpleMode,
+      getPdfCoordinates,
+      onClick,
+      onAddSignature,
+      signatureImage,
+      tracker,
+    ]
   );
 
   const handleResizeMouseDown = useCallback(
@@ -236,7 +244,7 @@ export default function PDF({
 
   // Filter signatures for current page
   const currentPageSignatures = signatures.filter(
-    (sig) => sig.page === (tracker?.currentPage || 1)
+    (sig) => sig.page === tracker.currentPage
   );
 
   return (
