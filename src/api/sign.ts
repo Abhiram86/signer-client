@@ -1,7 +1,8 @@
 import axios, { AxiosError } from "axios";
 
 const sign = axios.create({
-  baseURL: "http://localhost:8080/sign",
+  baseURL:
+    "https://signer-server-dnk4pcule-abhirams-projects-d301feec.vercel.app/sign",
   withCredentials: true,
 });
 

@@ -1,7 +1,8 @@
 import axios, { AxiosError } from "axios";
 
 const docs = axios.create({
-  baseURL: "http://localhost:8080/docs",
+  baseURL:
+    "https://signer-server-dnk4pcule-abhirams-projects-d301feec.vercel.app/docs",
   withCredentials: true,
 });
 
