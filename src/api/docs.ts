@@ -13,6 +13,7 @@ export interface Doc {
     data: any;
     contentType: string;
   };
+  status: "pending" | "signed" | "rejected";
   uploadTime: Date;
 }
 
@@ -32,6 +33,24 @@ export const getFiles = async (userId: string) => {
     return { docs: null, error: errorMessage };
   }
 };
+
+export const getFile = async (sessionToken: string) => {
+  try {
+    const res = await docs.get(`/${sessionToken}`);
+    console.log("res is ", res);
+    return { doc: res.data.doc as Doc, error: null };
+  } catch (error) {
+    let errorMessage = "An error occurred";
+    if (error instanceof AxiosError) {
+      console.log("error is ", error.message);
+      errorMessage = error.response?.data?.error || error.message;
+    } else {
+      console.log(error);
+    }
+    return { doc: null, error: errorMessage };
+  }
+};
+
 interface DocsUploadType {
   formData: FormData;
 }

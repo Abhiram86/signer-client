@@ -1,6 +1,8 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import isAuthenticated from "@/utils/isAuthenticated";
-import React, { Suspense } from "react";
+import React, { Suspense, useContext, useEffect, useState } from "react";
+import { getFiles, type Doc } from "@/api/docs";
+import { AuthContext } from "@/context/AuthProvider";
 
 const PDFViewer = React.lazy(() => import("@/components/PDFView"));
 
@@ -15,6 +17,20 @@ export const Route = createFileRoute("/dashboard")({
 });
 
 function RouteComponent() {
+  const { user } = useContext(AuthContext);
+  const [data, setData] = useState<Doc[]>([]);
+  useEffect(() => {
+    if (!user) return;
+    const fetchDocs = async () => {
+      const res = await getFiles(user.userId);
+      if (res.docs) {
+        console.log("res is ", res);
+
+        setData(res.docs);
+      }
+    };
+    fetchDocs();
+  }, [user]);
   return (
     <section className="p-4 max-w-4xl mx-auto space-y-4">
       <div>
@@ -28,7 +44,7 @@ function RouteComponent() {
             </div>
           }
         >
-          <PDFViewer simpleMode />
+          <PDFViewer docs={data} simpleMode />
         </Suspense>
       </div>
     </section>

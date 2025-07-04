@@ -16,15 +16,8 @@ import { useRef, useCallback, useState } from "react";
 import "@react-pdf-viewer/core/lib/styles/index.css";
 import "@react-pdf-viewer/page-navigation/lib/styles/index.css";
 import "@react-pdf-viewer/zoom/lib/styles/index.css";
-
-interface Doc {
-  _id: string;
-  fileName: string;
-  file: {
-    contentType: string;
-    data: number[];
-  };
-}
+import type { Doc } from "@/api/docs";
+import Modal from "./Modal";
 
 interface ProcessedDoc extends Doc {
   base64?: string;
@@ -102,6 +95,7 @@ export default function PDF({
   const [resizeHandle, setResizeHandle] = useState<
     "se" | "sw" | "ne" | "nw" | null
   >(null);
+  const [openModal, setOpenModal] = useState(false);
 
   const pageNavigationPluginInstance = pageNavigationPlugin();
   const scrollModePluginInstance = scrollModePlugin();
@@ -116,14 +110,14 @@ export default function PDF({
   const isReady = doc.base64 && !isProcessing && !hasError;
   const tracker = pageTracker;
 
-  const viewerHeight = simpleMode ? "h-[400px]" : "h-[1200px]";
+  const viewerHeight = simpleMode ? "h-[400px] w-[400px]" : "h-[1200px] w-full";
 
   // Get PDF-specific coordinates from mouse event
   const getPdfCoordinates = useCallback((e: React.MouseEvent) => {
     if (!pdfContainerRef.current) return null;
 
     const container = pdfContainerRef.current;
-    const rect = container.getBoundingClientRect();
+    // const rect = container.getBoundingClientRect();
 
     // Find the actual PDF page element within the container
     const pdfPage = container.querySelector(".rpv-core__page-layer");
@@ -152,6 +146,13 @@ export default function PDF({
     return null;
   }, []);
 
+  const getSignatureBounds = useCallback((signature: SignaturePosition) => {
+    const actualX = Math.max(0, Math.min(1 - signature.width, signature.x));
+    const actualY = Math.max(0, Math.min(1 - signature.height, signature.y));
+
+    return { x: actualX, y: actualY };
+  }, []);
+
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
       if (simpleMode) return;
@@ -162,11 +163,67 @@ export default function PDF({
       }
 
       // Handle signature dragging
-      if (draggedSignature !== null) {
-        const coords = getPdfCoordinates(e);
-        if (coords) {
-          onSignatureDrag(draggedSignature, coords.pageX, coords.pageY);
+      if (draggedSignature !== null && coords) {
+        const newX = coords.pageX - dragOffset.x;
+        const newY = coords.pageY - dragOffset.y;
+        onSignatureDrag(draggedSignature, newX, newY);
+      }
+
+      // Handle signature resizing
+      if (resizingSignature !== null && coords && resizeHandle) {
+        const sig = signatures[resizingSignature];
+        const { x, y, width, height } = sig;
+
+        let newX = x;
+        let newY = y;
+        let newWidth = width;
+        let newHeight = height;
+
+        switch (resizeHandle) {
+          case "se": // bottom-right
+            newWidth = Math.max(0.05, coords.pageX - x);
+            newHeight = Math.max(0.03, coords.pageY - y);
+            break;
+
+          case "sw": // bottom-left
+            newX = Math.min(x + width - 0.05, coords.pageX);
+            newWidth = Math.max(0.05, x + width - coords.pageX);
+            newHeight = Math.max(0.03, coords.pageY - y);
+            break;
+
+          case "ne": // top-right
+            newY = Math.min(y + height - 0.03, coords.pageY);
+            newWidth = Math.max(0.05, coords.pageX - x);
+            newHeight = Math.max(0.03, y + height - coords.pageY);
+            break;
+
+          case "nw": // top-left
+            newX = Math.min(x + width - 0.05, coords.pageX);
+            newY = Math.min(y + height - 0.03, coords.pageY);
+            newWidth = Math.max(0.05, x + width - coords.pageX);
+            newHeight = Math.max(0.03, y + height - coords.pageY);
+            break;
         }
+
+        // Ensure the signature stays within bounds
+        if (newX < 0) {
+          newWidth += newX; // Reduce width by how much we went negative
+          newX = 0;
+        }
+        if (newY < 0) {
+          newHeight += newY; // Reduce height by how much we went negative
+          newY = 0;
+        }
+        if (newX + newWidth > 1) {
+          newWidth = 1 - newX;
+        }
+        if (newY + newHeight > 1) {
+          newHeight = 1 - newY;
+        }
+
+        // Apply changes
+        onSignatureDrag(resizingSignature, newX, newY);
+        onSignatureResize(resizingSignature, newWidth, newHeight);
       }
     },
     [
@@ -174,7 +231,12 @@ export default function PDF({
       getPdfCoordinates,
       onMouseMove,
       draggedSignature,
+      dragOffset,
       onSignatureDrag,
+      resizingSignature,
+      resizeHandle,
+      signatures,
+      onSignatureResize,
     ]
   );
 
@@ -188,8 +250,7 @@ export default function PDF({
 
         // Add signature on double click (only if signature image is available)
         if (e.detail === 2 && signatureImage) {
-          const pageNumber = tracker.currentPage;
-          onAddSignature(coords.pageX, coords.pageY, pageNumber);
+          onAddSignature(coords.pageX, coords.pageY, pageTracker.currentPage);
         }
       }
     },
@@ -232,6 +293,9 @@ export default function PDF({
   const handleMouseUp = useCallback(() => {
     setDraggedSignature(null);
     setDragOffset({ x: 0, y: 0 });
+
+    setResizingSignature(null);
+    setResizeHandle(null);
   }, []);
 
   const handleSignatureDoubleClick = useCallback(
@@ -253,7 +317,7 @@ export default function PDF({
       <div className="bg-zinc-800 px-4 py-3 ring ring-zinc-600">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <h2 className="text-sm font-medium text-zinc-100">
+            <h2 className="text-sm font-medium max-w-[200px] truncate text-zinc-100">
               {doc.fileName}
             </h2>
             {isProcessing && (
@@ -267,7 +331,13 @@ export default function PDF({
                 Error: {doc.error}
               </span>
             )}
-            {isReady && <span className="text-xs text-green-400">Ready</span>}
+            {isReady && (
+              <span
+                className={`text-xs ${doc.status === "pending" ? "text-yellow-400" : "text-green-400"}`}
+              >
+                {doc.status}
+              </span>
+            )}
           </div>
 
           {!simpleMode && tracker && isReady && (
@@ -338,8 +408,35 @@ export default function PDF({
           )}
 
           {simpleMode && tracker && isReady && (
-            <div className="text-xs text-zinc-400">
-              {tracker.totalPages} page{tracker.totalPages > 1 ? "s" : ""}
+            <div className="flex items-center space-x-4 relative">
+              <p className="text-xs text-zinc-400">
+                {tracker.totalPages} page{tracker.totalPages > 1 ? "s" : ""}
+              </p>
+              {doc.status === "pending" ? (
+                <button
+                  onClick={() => setOpenModal(true)}
+                  className="px-2 py-1 text-xs bg-zinc-800 ring ring-zinc-600 rounded hover:bg-zinc-700"
+                >
+                  Invite
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    const link = document.createElement("a");
+                    link.href = `data:${doc.file.contentType};base64,${doc.base64}`;
+                    link.download = doc.fileName || "document.pdf";
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                  }}
+                  className="scale-60 hover:scale-75 transition-all cursor-pointer rounded-full"
+                >
+                  <img src="download.svg" alt="download" />
+                </button>
+              )}
+              {openModal && (
+                <Modal onClose={() => setOpenModal(false)} docId={doc._id} />
+              )}
             </div>
           )}
         </div>
@@ -350,13 +447,27 @@ export default function PDF({
             {Math.round(tracker.mouseX)}, {Math.round(tracker.mouseY)}) |
             Relative: ({tracker.pageX.toFixed(3)}, {tracker.pageY.toFixed(3)}) |
             Signatures: {currentPageSignatures.length}
+            {currentPageSignatures.length > 0 && (
+              <div className="mt-1">
+                {currentPageSignatures.map((sig, i) => {
+                  const bounds = getSignatureBounds(sig);
+                  return (
+                    <div key={i} className="text-xs">
+                      Sig {i + 1}: pos({bounds.x.toFixed(3)},{" "}
+                      {bounds.y.toFixed(3)}) size({sig.width.toFixed(3)},{" "}
+                      {sig.height.toFixed(3)})
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
       </div>
 
       {/* PDF Viewer */}
       <div
-        className={`${viewerHeight} w-full bg-zinc-600 flex items-center justify-center relative`}
+        className={`${viewerHeight} bg-zinc-600 flex items-center justify-center relative`}
         onMouseUp={handleMouseUp}
       >
         {isProcessing && (
@@ -405,84 +516,97 @@ export default function PDF({
             {/* Signature Overlay */}
             {!simpleMode &&
               signatureImage &&
-              currentPageSignatures.map((signature, index) => (
-                <div
-                  key={`${signature.docId}-${signature.page}-${index}`}
-                  className="absolute pointer-events-auto select-none group"
-                  style={{
-                    left: `${signature.x * 100}%`,
-                    top: `${signature.y * 100}%`,
-                    width: `${signature.width * 100}%`,
-                    height: `${signature.height * 100}%`,
-                    transform: "translate(-50%, -50%)",
-                    zIndex: 1000,
-                  }}
-                  title="Double-click to remove. Drag to move. Use corner handles to resize."
-                >
-                  {/* Signature Image */}
-                  <img
-                    src={signatureImage}
-                    alt="Signature"
-                    className="w-full h-full object-contain cursor-move bg-white/80 rounded shadow-lg border border-gray-300"
-                    onMouseDown={(e) =>
-                      handleSignatureMouseDown(e, signatures.indexOf(signature))
-                    }
-                    onDoubleClick={(e) =>
-                      handleSignatureDoubleClick(
-                        e,
-                        signatures.indexOf(signature)
-                      )
-                    }
-                    draggable={false}
-                  />
+              currentPageSignatures.map((signature, index) => {
+                // Calculate actual position ensuring signature stays within bounds
+                const actualX = Math.max(
+                  0,
+                  Math.min(1 - signature.width, signature.x)
+                );
+                const actualY = Math.max(
+                  0,
+                  Math.min(1 - signature.height, signature.y)
+                );
 
-                  {/* Resize Handles - Only show on hover */}
+                return (
                   <div
-                    className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full cursor-se-resize opacity-0 group-hover:opacity-100 transition-opacity"
-                    onMouseDown={(e) =>
-                      handleResizeMouseDown(
-                        e,
-                        signatures.indexOf(signature),
-                        "se"
-                      )
-                    }
-                    title="Resize"
-                  />
-                  <div
-                    className="absolute -top-1 -left-1 w-3 h-3 bg-blue-500 rounded-full cursor-sw-resize opacity-0 group-hover:opacity-100 transition-opacity"
-                    onMouseDown={(e) =>
-                      handleResizeMouseDown(
-                        e,
-                        signatures.indexOf(signature),
-                        "sw"
-                      )
-                    }
-                    title="Resize"
-                  />
-                  <div
-                    className="absolute -bottom-1 -right-1 w-3 h-3 bg-blue-500 rounded-full cursor-nw-resize opacity-0 group-hover:opacity-100 transition-opacity"
-                    onMouseDown={(e) =>
-                      handleResizeMouseDown(
-                        e,
-                        signatures.indexOf(signature),
-                        "nw"
-                      )
-                    }
-                    title="Resize"
-                  />
-                  <div
-                    className="absolute -bottom-1 -left-1 w-3 h-3 bg-blue-500 rounded-full cursor-ne-resize opacity-0 group-hover:opacity-100 transition-opacity"
-                    onMouseDown={(e) =>
-                      handleResizeMouseDown(
-                        e,
-                        signatures.indexOf(signature),
-                        "ne"
-                      )
-                    }
-                    title="Resize"
-                  />
-                </div>
-              ))}
+                    key={`${signature.docId}-${signature.page}-${index}`}
+                    className="absolute pointer-events-auto select-none group"
+                    style={{
+                      left: `${actualX * 100}%`,
+                      top: `${actualY * 100}%`,
+                      width: `${signature.width * 100}%`,
+                      height: `${signature.height * 100}%`,
+                      zIndex: 1000,
+                    }}
+                    title="Double-click to remove. Drag to move. Use corner handles to resize."
+                  >
+                    {/* Signature Image */}
+                    <img
+                      src={signatureImage}
+                      alt="Signature"
+                      className="w-full h-full object-contain cursor-move bg-white/80 rounded shadow-lg border border-gray-300"
+                      onMouseDown={(e) =>
+                        handleSignatureMouseDown(
+                          e,
+                          signatures.indexOf(signature)
+                        )
+                      }
+                      onDoubleClick={(e) =>
+                        handleSignatureDoubleClick(
+                          e,
+                          signatures.indexOf(signature)
+                        )
+                      }
+                      draggable={false}
+                    />
+                    {/* Resize Handles - Positioned relative to signature bounds */}
+                    <div
+                      className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full cursor-se-resize opacity-0 group-hover:opacity-100 transition-opacity"
+                      onMouseDown={(e) =>
+                        handleResizeMouseDown(
+                          e,
+                          signatures.indexOf(signature),
+                          "se"
+                        )
+                      }
+                      title="Resize"
+                    />
+                    <div
+                      className="absolute -top-1 -left-1 w-3 h-3 bg-blue-500 rounded-full cursor-sw-resize opacity-0 group-hover:opacity-100 transition-opacity"
+                      onMouseDown={(e) =>
+                        handleResizeMouseDown(
+                          e,
+                          signatures.indexOf(signature),
+                          "sw"
+                        )
+                      }
+                      title="Resize"
+                    />
+                    <div
+                      className="absolute -bottom-1 -right-1 w-3 h-3 bg-blue-500 rounded-full cursor-nw-resize opacity-0 group-hover:opacity-100 transition-opacity"
+                      onMouseDown={(e) =>
+                        handleResizeMouseDown(
+                          e,
+                          signatures.indexOf(signature),
+                          "nw"
+                        )
+                      }
+                      title="Resize"
+                    />
+                    <div
+                      className="absolute -bottom-1 -left-1 w-3 h-3 bg-blue-500 rounded-full cursor-ne-resize opacity-0 group-hover:opacity-100 transition-opacity"
+                      onMouseDown={(e) =>
+                        handleResizeMouseDown(
+                          e,
+                          signatures.indexOf(signature),
+                          "ne"
+                        )
+                      }
+                      title="Resize"
+                    />
+                  </div>
+                );
+              })}
           </div>
         )}
       </div>

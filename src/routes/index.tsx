@@ -1,6 +1,6 @@
-// import { docsUpload } from "@/api/docs";
+import { docsUpload } from "@/api/docs";
 import { Button } from "@/components/Button";
-import Sign from "@/components/Sign";
+// import Sign from "@/components/Sign";
 import { AuthContext } from "@/context/AuthProvider";
 import { createFileRoute } from "@tanstack/react-router";
 import { useContext, useRef, useState } from "react";
@@ -36,14 +36,14 @@ function Home() {
     setFile(e.target.files[0]);
   };
 
-  // const handleClick = async () => {
-  //   const formData = new FormData();
-  //   if (!file || !user) return;
-  //   formData.append("pdf", file);
-  //   console.log(typeof user.userId);
-  //   formData.append("userId", user.userId);
-  //   await docsUpload({ formData });
-  // };
+  const handleClick = async () => {
+    const formData = new FormData();
+    if (!file || !user) return;
+    formData.append("file", file);
+    console.log(typeof user.userId);
+    formData.append("userId", user.userId);
+    await docsUpload({ formData });
+  };
 
   return (
     <section className="p-4 max-w-6xl mx-auto space-y-4">
@@ -55,37 +55,35 @@ function Home() {
           Signer allows you to embed your signature to your pdf document
         </p>
       </div>
-      {!file ? (
-        <div className="space-y-4 max-w-3xl mx-auto">
-          <div className="flex flex-col w-full max-w-3xl mx-auto items-center space-y-2">
-            <label htmlFor="file">Drop your pdf or select a file</label>
-            <div
-              onDragEnter={handleDrag}
-              onDragOver={handleDrag}
-              onDragLeave={handleDrag}
-              onDrop={handleDrag}
-              onClick={() => inputRef.current?.click()}
-              className={`border-2 border-dashed border-zinc-400 h-64 w-full rounded-lg flex items-center justify-center cursor-pointer ${
-                isDragging ? "bg-zinc-800" : ""
-              }`}
-            >
-              <p className="text-zinc-400">Drag and drop or click to upload</p>
-            </div>
-            <input
-              type="file"
-              name="file"
-              id="file"
-              accept=".pdf"
-              ref={inputRef}
-              onChange={handleInput}
-              className="ring-2 w-full cursor-pointer transition-all file:cursor-pointer ring-zinc-600 hover:ring-sky-300 file:py-2 file:px-6 file:bg-zinc-200 file:text-zinc-950 rounded-full"
-            />
+      <div className="space-y-4 max-w-3xl mx-auto">
+        <div className="flex flex-col w-full max-w-3xl mx-auto items-center space-y-2">
+          <label htmlFor="file">Drop your pdf or select a file</label>
+          <div
+            onDragEnter={handleDrag}
+            onDragOver={handleDrag}
+            onDragLeave={handleDrag}
+            onDrop={handleDrag}
+            onClick={() => inputRef.current?.click()}
+            className={`border-2 border-dashed border-zinc-400 h-64 w-full rounded-lg flex items-center justify-center cursor-pointer ${
+              isDragging ? "bg-zinc-800" : ""
+            }`}
+          >
+            <p className="text-zinc-400">Drag and drop or click to upload</p>
           </div>
-          {/* <Button className="rounded-full">proceed for signature</Button> */}
+          <input
+            type="file"
+            name="file"
+            id="file"
+            accept=".pdf"
+            ref={inputRef}
+            onChange={handleInput}
+            className="ring-2 w-full cursor-pointer transition-all file:cursor-pointer ring-zinc-600 hover:ring-sky-300 file:py-2 file:px-6 file:bg-zinc-200 file:text-zinc-950 rounded-full"
+          />
         </div>
-      ) : (
-        <Sign file={file} userId={user?.userId} />
-      )}
+        <Button onClick={handleClick} className="rounded-full">
+          upload the file
+        </Button>
+      </div>
     </section>
   );
 }
