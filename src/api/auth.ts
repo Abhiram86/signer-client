@@ -2,8 +2,7 @@ import type { User } from "@/context/AuthProvider";
 import axios, { AxiosError } from "axios";
 
 const auth = axios.create({
-  baseURL:
-    "https://signer-server-dnk4pcule-abhirams-projects-d301feec.vercel.app/auth",
+  baseURL: "https://signer-server-one.vercel.app/auth",
   withCredentials: true,
 });
 
